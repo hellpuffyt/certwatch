@@ -1,0 +1,48 @@
+# Example certwatch inventory.
+#
+# `defaults` sets the fleet-wide lead-time tiers (in days remaining) used to
+# classify severity when a host doesn't override them:
+#   critical_days: below this many days remaining -> critical
+#   warning_days:  below this many days remaining -> warning
+#   notice_days:   below this many days remaining -> notice
+# Anything with more days remaining than notice_days is "ok". A certificate
+# that has already expired is always "expired", and one whose NotBefore is
+# still in the future is always "not-yet-valid", regardless of these
+# thresholds.
+defaults:
+  critical_days: 7
+  warning_days: 30
+  notice_days: 60
+
+hosts:
+  # Minimal entry: port defaults to 443, SNI defaults to the name.
+  - name: example.com
+    owner: platform-team
+
+  # A host fronted by a load balancer where the dial target differs from
+  # the certificate's expected hostname (SNI override), with a tighter
+  # lead time because it's a customer-facing checkout path.
+  - name: lb-internal.example.net
+    port: 8443
+    sni: checkout.example.com
+    owner: payments-team
+    team: payments
+    lead_times:
+      critical_days: 14
+      warning_days: 45
+      notice_days: 90
+
+  # A lower-stakes internal service that only needs a heads-up shortly
+  # before expiry.
+  - name: internal-dashboard.example.internal
+    port: 443
+    owner: infra-team
+    team: infra
+    lead_times:
+      critical_days: 3
+      warning_days: 10
+      notice_days: 21
+
+  - name: api.example.com
+    owner: api-team
+    team: platform

@@ -1,0 +1,17 @@
+# Build artifacts
+/certwatch
+/dist/
+*.exe
+*.test
+
+# Runtime state and generated metrics
+certwatch-state.json
+*.prom
+
+# Go
+/vendor/
+
+# Editor/OS
+.DS_Store
+.idea/
+.vscode/

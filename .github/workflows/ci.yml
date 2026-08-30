@@ -1,0 +1,103 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: "Test (Go ${{ matrix.go }}, ${{ matrix.os }})"
+    strategy:
+      fail-fast: false
+      matrix:
+        go: ["1.22", "1.23"]
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
+
+      - name: Build
+        run: go build ./...
+
+      - name: Test
+        run: go test ./... -v -race
+
+  lint:
+    name: "Vet and gofmt (expected: clean)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: "Check formatting (gofmt -l must print nothing)"
+        run: |
+          fmt_out="$(gofmt -l .)"
+          if [ -n "$fmt_out" ]; then
+            echo "The following files are not gofmt-formatted:"
+            echo "$fmt_out"
+            exit 1
+          fi
+
+  smoke:
+    name: "Smoke test against real public hosts"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+
+      - name: Build binary
+        run: go build -o certwatch ./cmd/certwatch
+
+      - name: "Write smoke inventory (real public hosts)"
+        run: |
+          cat > smoke-inventory.yaml <<'EOF'
+          defaults:
+            critical_days: 7
+            warning_days: 30
+            notice_days: 60
+          hosts:
+            - name: www.google.com
+              owner: smoke-test
+            - name: www.cloudflare.com
+              owner: smoke-test
+          EOF
+
+      - name: "Run certwatch against real hosts (expected: exit 0 or 1, never crash)"
+        run: |
+          set +e
+          ./certwatch -inventory smoke-inventory.yaml -state smoke-state.json -format json -output smoke-out.json -fail-on error
+          code=$?
+          echo "exit code: $code"
+          cat smoke-out.json
+          # Any exit code up to 1 is acceptable (severity-dependent); 2+
+          # means a usage/parse error, which is a real smoke-test failure.
+          if [ "$code" -ge 2 ]; then
+            echo "certwatch exited with an unexpected error code"
+            exit 1
+          fi
+
+      - name: Validate JSON output shape
+        run: |
+          test -s smoke-out.json
+          go run ./cmd/certwatch -version
