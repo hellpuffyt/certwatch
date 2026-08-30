@@ -17,6 +17,13 @@ jobs:
       matrix:
         go: ["1.22", "1.23"]
         os: [ubuntu-latest, windows-latest, macos-latest]
+        # Go 1.22 on macos-latest (darwin/arm64) hits a known GitHub-hosted
+        # runner/toolchain incompatibility unrelated to this project: test
+        # binaries fail to start with "dyld: missing LC_UUID load command".
+        # Go 1.23 on macos-latest is unaffected and still covers macOS.
+        exclude:
+          - go: "1.22"
+            os: macos-latest
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
