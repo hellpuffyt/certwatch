@@ -7,9 +7,11 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"time"
 
+	"github.com/hellpuffyt/certwatch/internal/atomicfile"
 	"github.com/hellpuffyt/certwatch/internal/certcheck"
 	"github.com/hellpuffyt/certwatch/internal/inventory"
 	"github.com/hellpuffyt/certwatch/internal/report"
@@ -63,6 +65,13 @@ func run(args []string, stdout, stderr *os.File) int {
 		return 2
 	}
 
+	switch *format {
+	case "table", "json", "prometheus":
+	default:
+		fmt.Fprintf(stderr, "certwatch: unknown -format %q (want table, json, or prometheus)\n", *format)
+		return 2
+	}
+
 	now := time.Now()
 	if *nowOverrideStr != "" {
 		parsed, err := time.Parse(time.RFC3339, *nowOverrideStr)
@@ -101,14 +110,6 @@ func run(args []string, stdout, stderr *os.File) int {
 
 	results := certcheck.Run(context.Background(), fetcher, inv.Hosts, opts)
 	diffs := state.Compare(prevState, results)
-
-	if !*noState {
-		next := state.MergeForward(prevState, results)
-		if err := next.Save(*statePath); err != nil {
-			fmt.Fprintf(stderr, "certwatch: %v\n", err)
-			return 2
-		}
-	}
 
 	anyChanged := false
 	for _, d := range diffs {
@@ -158,19 +159,23 @@ func run(args []string, stdout, stderr *os.File) int {
 	}
 
 	if *prometheusOut != "" {
-		f, err := os.Create(*prometheusOut)
+		// Written to a temp file and renamed into place, so node_exporter's
+		// textfile collector never reads a half-written file.
+		err := atomicfile.Write(*prometheusOut, 0o644, func(w io.Writer) error {
+			return report.WritePrometheus(w, results)
+		})
 		if err != nil {
+			fmt.Fprintf(stderr, "certwatch: writing prometheus metrics: %v\n", err)
+			return 2
+		}
+	}
+
+	// State is saved only after every output succeeded: if reporting
+	// failed, the next run must still see (and report) the same changes.
+	if !*noState {
+		next := state.MergeForward(prevState, results)
+		if err := next.Save(*statePath); err != nil {
 			fmt.Fprintf(stderr, "certwatch: %v\n", err)
-			return 2
-		}
-		werr := report.WritePrometheus(f, results)
-		cerr := f.Close()
-		if werr != nil {
-			fmt.Fprintf(stderr, "certwatch: writing prometheus metrics: %v\n", werr)
-			return 2
-		}
-		if cerr != nil {
-			fmt.Fprintf(stderr, "certwatch: %v\n", cerr)
 			return 2
 		}
 	}

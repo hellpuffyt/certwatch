@@ -6,8 +6,11 @@ package state
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"time"
+
+	"github.com/hellpuffyt/certwatch/internal/atomicfile"
 
 	"github.com/hellpuffyt/certwatch/internal/certcheck"
 )
@@ -55,13 +58,20 @@ func Load(path string) (*State, error) {
 	return &s, nil
 }
 
-// Save writes the state to disk as indented JSON.
+// Save writes the state to disk as indented JSON with mode 0600. The file
+// is written to a temporary name and renamed into place, so a crash or a
+// full disk mid-write leaves the previous state intact instead of a
+// truncated file that would make every later run fail to parse it.
 func (s *State) Save(path string) error {
 	data, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshaling state: %w", err)
 	}
-	if err := os.WriteFile(path, data, 0o600); err != nil {
+	err = atomicfile.Write(path, 0o600, func(w io.Writer) error {
+		_, werr := w.Write(data)
+		return werr
+	})
+	if err != nil {
 		return fmt.Errorf("writing state %s: %w", path, err)
 	}
 	return nil

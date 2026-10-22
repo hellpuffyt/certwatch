@@ -355,3 +355,35 @@ func TestRun_IPHostMatchesIPSAN(t *testing.T) {
 		t.Fatalf("IP host flagged san_mismatch: %s", data)
 	}
 }
+
+// Regression: an invalid -format was only detected after every host had
+// been checked and the state file rewritten, so the changes of that run
+// were silently consumed. Likewise a failed output write still saved state.
+func TestRun_StateNotSavedWhenOutputFails(t *testing.T) {
+	addr := startTestTLSServer(t, time.Now().Add(3*24*time.Hour))
+	invPath := writeInventory(t, addr)
+	statePath := filepath.Join(t.TempDir(), "state.json")
+
+	if code := run([]string{"-inventory", invPath, "-state", statePath, "-format", "yaml"}, devNullFile(t), devNullFile(t)); code != 2 {
+		t.Fatalf("invalid format: exit %d, want 2", code)
+	}
+	if _, err := os.Stat(statePath); !os.IsNotExist(err) {
+		t.Fatalf("state written despite invalid -format: %v", err)
+	}
+
+	badOut := filepath.Join(t.TempDir(), "missing-dir", "out.json")
+	if code := run([]string{"-inventory", invPath, "-state", statePath, "-format", "json", "-output", badOut}, devNullFile(t), devNullFile(t)); code != 2 {
+		t.Fatalf("unwritable output: exit %d, want 2", code)
+	}
+	if _, err := os.Stat(statePath); !os.IsNotExist(err) {
+		t.Fatalf("state written although output failed: %v", err)
+	}
+
+	badProm := filepath.Join(t.TempDir(), "missing-dir", "m.prom")
+	if code := run([]string{"-inventory", invPath, "-state", statePath, "-prometheus-out", badProm}, devNullFile(t), devNullFile(t)); code != 2 {
+		t.Fatalf("unwritable prometheus-out: exit %d, want 2", code)
+	}
+	if _, err := os.Stat(statePath); !os.IsNotExist(err) {
+		t.Fatalf("state written although metrics failed: %v", err)
+	}
+}
