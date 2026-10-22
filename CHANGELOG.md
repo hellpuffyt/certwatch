@@ -18,6 +18,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   longer swallows that run's new/resolved/CA-change events.
 - The state file and `-prometheus-out` are written atomically
   (temp file + rename).
+- `-only-changed` is quiet during an outage: an unreachable host is now
+  recorded in state with severity `error` (certificate history kept), so it
+  is reported once when it goes down and once when it recovers, instead of
+  on every run.
 
 ### Changed
 
