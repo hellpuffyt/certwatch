@@ -63,7 +63,9 @@ only once this branch is on the default branch.
 | `go mod verify` | 0 | all modules verified |
 | `go run github.com/zricethezav/gitleaks/v8@latest git --redact .` | 0 | no leaks in any commit |
 
-Each regression test below was run against the pre-fix code and failed.
+The regression tests for bugs 2, 3 and 5 were run against the pre-fix
+code and failed there; bug 4's tests cover a new helper package and
+could not run against the old code.
 
 ## CI status
 
