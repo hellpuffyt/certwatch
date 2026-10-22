@@ -102,21 +102,27 @@ func FromResults(results []certcheck.Result) *State {
 }
 
 // MergeForward returns a new State suitable for saving after this run: for
-// every current result it records fresh state, and for hosts that errored
-// this run (and so have no fresh data) it carries forward their previous
-// entry unchanged, so a transient network blip doesn't erase history.
+// every current result it records fresh state. A host that errored this run
+// has no fresh certificate data, so its previous issuer, serial and expiry
+// are carried forward (a transient network blip must not erase the history
+// CA-change detection needs), but its severity is recorded as error. That
+// way an outage is reported once as a new problem and once as resolved,
+// instead of on every run (which made -only-changed noisy for as long as a
+// host stayed unreachable).
 func MergeForward(previous *State, results []certcheck.Result) *State {
 	next := FromResults(results)
-	if previous == nil {
-		return next
-	}
 	for _, r := range results {
 		if r.Severity != certcheck.SeverityError {
 			continue
 		}
-		if prev, ok := previous.Entries[r.Key()]; ok {
-			next.Entries[r.Key()] = prev
+		e := Entry{Host: r.Host, Port: r.Port, LastChecked: r.CheckedAt}
+		if previous != nil {
+			if prev, ok := previous.Entries[r.Key()]; ok {
+				e = prev
+			}
 		}
+		e.Severity = certcheck.SeverityError
+		next.Entries[r.Key()] = e
 	}
 	return next
 }

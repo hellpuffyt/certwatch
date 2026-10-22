@@ -387,3 +387,27 @@ func TestRun_StateNotSavedWhenOutputFails(t *testing.T) {
 		t.Fatalf("state written although metrics failed: %v", err)
 	}
 }
+
+// Regression: with an unreachable host in the inventory, -only-changed
+// printed the full report on every run.
+func TestRun_OnlyChangedQuietDuringOutage(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := ln.Addr().String()
+	ln.Close() // nothing listens here any more: connection refused
+	invPath := writeInventory(t, addr)
+	statePath := filepath.Join(t.TempDir(), "state.json")
+	for i, wantOutput := range []bool{true, false, false} {
+		outPath := filepath.Join(t.TempDir(), "out.txt")
+		code := run([]string{"-inventory", invPath, "-state", statePath, "-only-changed", "-output", outPath}, devNullFile(t), devNullFile(t))
+		if code != 1 {
+			t.Fatalf("run %d: exit %d, want 1 (error severity)", i, code)
+		}
+		_, statErr := os.Stat(outPath)
+		if wrote := statErr == nil; wrote != wantOutput {
+			t.Fatalf("run %d: output written=%v, want %v", i, wrote, wantOutput)
+		}
+	}
+}

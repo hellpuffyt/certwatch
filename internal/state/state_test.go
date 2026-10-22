@@ -82,8 +82,46 @@ func TestMergeForwardCarriesErroredHostState(t *testing.T) {
 	if !ok {
 		t.Fatal("expected errored host's previous state to be carried forward")
 	}
-	if e.Severity != certcheck.SeverityWarning {
-		t.Fatalf("expected carried-forward severity warning, got %s", e.Severity)
+	// Expectation changed in the audit: the severity used to stay at the
+	// pre-outage value, so Compare reported the outage as a new problem on
+	// every run (breaking -only-changed). The certificate history (issuer)
+	// is still carried forward; the severity now records the error.
+	if e.Severity != certcheck.SeverityError || e.Issuer != "CN=CA" {
+		t.Fatalf("expected severity error with issuer carried forward, got %+v", e)
+	}
+}
+
+// Regression: an unreachable host was reported as a new problem on every
+// run, both when it had never been reached and after a known-good state.
+func TestOutageIsReportedOnceThenResolved(t *testing.T) {
+	ok := certcheck.Result{Host: "h", Port: 443, Severity: certcheck.SeverityOK, Issuer: "CN=CA", SerialNumber: "1"}
+	down := certcheck.Result{Host: "h", Port: 443, Severity: certcheck.SeverityError, Error: "timeout"}
+	never := certcheck.Result{Host: "n", Port: 443, Severity: certcheck.SeverityError, Error: "refused"}
+
+	s := MergeForward(New(), []certcheck.Result{ok, never})
+	steps := []struct {
+		res          []certcheck.Result
+		wantChanged  map[string]bool
+		wantResolved bool
+	}{
+		{[]certcheck.Result{down, never}, map[string]bool{"h:443": true, "n:443": false}, false},
+		{[]certcheck.Result{down, never}, map[string]bool{"h:443": false, "n:443": false}, false},
+		{[]certcheck.Result{ok, never}, map[string]bool{"h:443": true, "n:443": false}, true},
+	}
+	for i, st := range steps {
+		diffs := Compare(s, st.res)
+		for _, d := range diffs {
+			if d.Changed() != st.wantChanged[d.Key] {
+				t.Fatalf("step %d %s: changed=%v want %v (%+v)", i, d.Key, d.Changed(), st.wantChanged[d.Key], d)
+			}
+			if d.Key == "h:443" && st.wantResolved && !d.Resolved {
+				t.Fatalf("step %d: recovery not reported as resolved", i)
+			}
+			if d.Key == "h:443" && (d.CAChanged || d.SerialChanged) {
+				t.Fatalf("step %d: spurious CA/serial change", i)
+			}
+		}
+		s = MergeForward(s, st.res)
 	}
 }
 
