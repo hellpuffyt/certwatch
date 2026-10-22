@@ -4,6 +4,31 @@ All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased]
+
+### Fixed
+
+- `go install` now works: the module path is
+  `github.com/hellpuffyt/certwatch` (it was `certwatch`, which the Go tool
+  rejects as a module path).
+- Hosts addressed by IP address are matched against the certificate's IP
+  SANs; they were always reported as `san-mismatch`.
+- An invalid `-format` is rejected before any host is checked, and the
+  state file is written only after all output succeeded, so a failed run no
+  longer swallows that run's new/resolved/CA-change events.
+- The state file and `-prometheus-out` are written atomically
+  (temp file + rename).
+
+### Changed
+
+- README: corrected the file-permission statement (metrics are `0644`, not
+  `0600`) and added a Limitations section.
+
+### Added
+
+- Loopback TLS tests for the real fetcher (chain completeness, expired,
+  not-yet-valid, wrong name, silent server).
+
 ## [0.1.0] - 2026-08-30
 
 ### Added
