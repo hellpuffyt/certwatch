@@ -331,3 +331,27 @@ func TestRun_UnreachableHostDoesNotCrash(t *testing.T) {
 		t.Fatalf("expected exit 1 for unreachable host with fail-on=error, got %d", code)
 	}
 }
+
+// Regression: an inventory entry addressed by IP (no sni) against a
+// certificate with that IP SAN was reported as san_mismatch.
+func TestRun_IPHostMatchesIPSAN(t *testing.T) {
+	addr := startTestTLSServer(t, time.Now().Add(90*24*time.Hour))
+	host, port, _ := net.SplitHostPort(addr)
+	invPath := filepath.Join(t.TempDir(), "inv.yaml")
+	if err := os.WriteFile(invPath, []byte(fmt.Sprintf("hosts:\n  - name: %s\n    port: %s\n", host, port)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	outPath := filepath.Join(t.TempDir(), "out.json")
+	code := run([]string{"-inventory", invPath, "-no-state", "-format", "json", "-output", outPath}, devNullFile(t), devNullFile(t))
+	if code != 0 {
+		t.Fatalf("exit %d", code)
+	}
+	data, _ := os.ReadFile(outPath)
+	var results []map[string]any
+	if err := json.Unmarshal(data, &results); err != nil || len(results) != 1 {
+		t.Fatalf("bad json: %v\n%s", err, data)
+	}
+	if results[0]["san_mismatch"] != false {
+		t.Fatalf("IP host flagged san_mismatch: %s", data)
+	}
+}

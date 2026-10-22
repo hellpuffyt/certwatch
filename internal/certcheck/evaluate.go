@@ -27,7 +27,7 @@ func Evaluate(host inventory.Host, info CertInfo, lt inventory.LeadTimes, now ti
 		ChainIncomplete: info.ChainIncomplete,
 	}
 
-	r.SANMismatch = !AnyHostnameMatch(info.DNSNames, host.EffectiveSNI())
+	r.SANMismatch = !MatchesTarget(info, host.EffectiveSNI())
 
 	// Days remaining until expiry, rounded toward zero on the calendar day
 	// boundary so "3 days left" behaves the way an operator expects.

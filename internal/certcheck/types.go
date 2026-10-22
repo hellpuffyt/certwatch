@@ -103,6 +103,7 @@ type CertInfo struct {
 	NotBefore       time.Time
 	NotAfter        time.Time
 	DNSNames        []string
+	IPAddresses     []string // IP SANs, in net.IP.String() form
 	Issuer          string
 	Subject         string
 	SerialNumber    string

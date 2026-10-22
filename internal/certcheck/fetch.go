@@ -81,6 +81,7 @@ func CertInfoFromCertificate(leaf *x509.Certificate, chainLen int) CertInfo {
 		NotBefore:       leaf.NotBefore,
 		NotAfter:        leaf.NotAfter,
 		DNSNames:        leaf.DNSNames,
+		IPAddresses:     ipStrings(leaf.IPAddresses),
 		Issuer:          leaf.Issuer.String(),
 		Subject:         leaf.Subject.String(),
 		SerialNumber:    leaf.SerialNumber.String(),
@@ -88,6 +89,14 @@ func CertInfoFromCertificate(leaf *x509.Certificate, chainLen int) CertInfo {
 		ChainIncomplete: chainLen <= 1 && !selfSigned,
 		ChainLength:     chainLen,
 	}
+}
+
+func ipStrings(ips []net.IP) []string {
+	var out []string
+	for _, ip := range ips {
+		out = append(out, ip.String())
+	}
+	return out
 }
 
 // isSelfSigned reports whether a certificate appears to be self-signed: its
