@@ -10,10 +10,10 @@ import (
 	"os"
 	"time"
 
-	"certwatch/internal/certcheck"
-	"certwatch/internal/inventory"
-	"certwatch/internal/report"
-	"certwatch/internal/state"
+	"github.com/hellpuffyt/certwatch/internal/certcheck"
+	"github.com/hellpuffyt/certwatch/internal/inventory"
+	"github.com/hellpuffyt/certwatch/internal/report"
+	"github.com/hellpuffyt/certwatch/internal/state"
 )
 
 const version = "0.1.0"

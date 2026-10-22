@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"time"
 
-	"certwatch/internal/inventory"
+	"github.com/hellpuffyt/certwatch/internal/inventory"
 )
 
 // TLSFetcher fetches certificate information by dialing the host over TLS.

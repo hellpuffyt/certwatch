@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"certwatch/internal/certcheck"
+	"github.com/hellpuffyt/certwatch/internal/certcheck"
 )
 
 func TestLoadMissingFileReturnsEmptyState(t *testing.T) {

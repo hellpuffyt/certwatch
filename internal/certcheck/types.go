@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"time"
 
-	"certwatch/internal/inventory"
+	"github.com/hellpuffyt/certwatch/internal/inventory"
 )
 
 // Severity classifies the health of a single certificate check. The zero

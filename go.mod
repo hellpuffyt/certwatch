@@ -1,4 +1,4 @@
-module certwatch
+module github.com/hellpuffyt/certwatch
 
 go 1.22
 

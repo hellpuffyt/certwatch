@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"certwatch/internal/inventory"
+	"github.com/hellpuffyt/certwatch/internal/inventory"
 )
 
 // fakeFetcher is a Fetcher test double keyed by host name, so tests never

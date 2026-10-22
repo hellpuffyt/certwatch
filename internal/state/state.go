@@ -9,7 +9,7 @@ import (
 	"os"
 	"time"
 
-	"certwatch/internal/certcheck"
+	"github.com/hellpuffyt/certwatch/internal/certcheck"
 )
 
 // Entry is the persisted record for a single host from the previous run.

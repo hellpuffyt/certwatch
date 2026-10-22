@@ -3,7 +3,7 @@ package certcheck
 import (
 	"time"
 
-	"certwatch/internal/inventory"
+	"github.com/hellpuffyt/certwatch/internal/inventory"
 )
 
 // Evaluate turns fetched certificate info into a reportable Result,

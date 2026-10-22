@@ -93,7 +93,7 @@ and hands the parsed leaf to the same evaluation code.
 Requires Go 1.22+.
 
 ```sh
-go install certwatch/cmd/certwatch@latest
+go install github.com/hellpuffyt/certwatch/cmd/certwatch@latest
 ```
 
 Or build from source:

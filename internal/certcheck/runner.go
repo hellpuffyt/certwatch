@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"certwatch/internal/inventory"
+	"github.com/hellpuffyt/certwatch/internal/inventory"
 )
 
 // RunOptions configures a concurrent inventory check.
