@@ -331,3 +331,83 @@ func TestRun_UnreachableHostDoesNotCrash(t *testing.T) {
 		t.Fatalf("expected exit 1 for unreachable host with fail-on=error, got %d", code)
 	}
 }
+
+// Regression: an inventory entry addressed by IP (no sni) against a
+// certificate with that IP SAN was reported as san_mismatch.
+func TestRun_IPHostMatchesIPSAN(t *testing.T) {
+	addr := startTestTLSServer(t, time.Now().Add(90*24*time.Hour))
+	host, port, _ := net.SplitHostPort(addr)
+	invPath := filepath.Join(t.TempDir(), "inv.yaml")
+	if err := os.WriteFile(invPath, []byte(fmt.Sprintf("hosts:\n  - name: %s\n    port: %s\n", host, port)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	outPath := filepath.Join(t.TempDir(), "out.json")
+	code := run([]string{"-inventory", invPath, "-no-state", "-format", "json", "-output", outPath}, devNullFile(t), devNullFile(t))
+	if code != 0 {
+		t.Fatalf("exit %d", code)
+	}
+	data, _ := os.ReadFile(outPath)
+	var results []map[string]any
+	if err := json.Unmarshal(data, &results); err != nil || len(results) != 1 {
+		t.Fatalf("bad json: %v\n%s", err, data)
+	}
+	if results[0]["san_mismatch"] != false {
+		t.Fatalf("IP host flagged san_mismatch: %s", data)
+	}
+}
+
+// Regression: an invalid -format was only detected after every host had
+// been checked and the state file rewritten, so the changes of that run
+// were silently consumed. Likewise a failed output write still saved state.
+func TestRun_StateNotSavedWhenOutputFails(t *testing.T) {
+	addr := startTestTLSServer(t, time.Now().Add(3*24*time.Hour))
+	invPath := writeInventory(t, addr)
+	statePath := filepath.Join(t.TempDir(), "state.json")
+
+	if code := run([]string{"-inventory", invPath, "-state", statePath, "-format", "yaml"}, devNullFile(t), devNullFile(t)); code != 2 {
+		t.Fatalf("invalid format: exit %d, want 2", code)
+	}
+	if _, err := os.Stat(statePath); !os.IsNotExist(err) {
+		t.Fatalf("state written despite invalid -format: %v", err)
+	}
+
+	badOut := filepath.Join(t.TempDir(), "missing-dir", "out.json")
+	if code := run([]string{"-inventory", invPath, "-state", statePath, "-format", "json", "-output", badOut}, devNullFile(t), devNullFile(t)); code != 2 {
+		t.Fatalf("unwritable output: exit %d, want 2", code)
+	}
+	if _, err := os.Stat(statePath); !os.IsNotExist(err) {
+		t.Fatalf("state written although output failed: %v", err)
+	}
+
+	badProm := filepath.Join(t.TempDir(), "missing-dir", "m.prom")
+	if code := run([]string{"-inventory", invPath, "-state", statePath, "-prometheus-out", badProm}, devNullFile(t), devNullFile(t)); code != 2 {
+		t.Fatalf("unwritable prometheus-out: exit %d, want 2", code)
+	}
+	if _, err := os.Stat(statePath); !os.IsNotExist(err) {
+		t.Fatalf("state written although metrics failed: %v", err)
+	}
+}
+
+// Regression: with an unreachable host in the inventory, -only-changed
+// printed the full report on every run.
+func TestRun_OnlyChangedQuietDuringOutage(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := ln.Addr().String()
+	ln.Close() // nothing listens here any more: connection refused
+	invPath := writeInventory(t, addr)
+	statePath := filepath.Join(t.TempDir(), "state.json")
+	for i, wantOutput := range []bool{true, false, false} {
+		outPath := filepath.Join(t.TempDir(), "out.txt")
+		code := run([]string{"-inventory", invPath, "-state", statePath, "-only-changed", "-output", outPath}, devNullFile(t), devNullFile(t))
+		if code != 1 {
+			t.Fatalf("run %d: exit %d, want 1 (error severity)", i, code)
+		}
+		_, statErr := os.Stat(outPath)
+		if wrote := statErr == nil; wrote != wantOutput {
+			t.Fatalf("run %d: output written=%v, want %v", i, wrote, wantOutput)
+		}
+	}
+}

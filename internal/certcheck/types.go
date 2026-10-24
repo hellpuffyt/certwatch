@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"time"
 
-	"certwatch/internal/inventory"
+	"github.com/hellpuffyt/certwatch/internal/inventory"
 )
 
 // Severity classifies the health of a single certificate check. The zero
@@ -103,6 +103,7 @@ type CertInfo struct {
 	NotBefore       time.Time
 	NotAfter        time.Time
 	DNSNames        []string
+	IPAddresses     []string // IP SANs, in net.IP.String() form
 	Issuer          string
 	Subject         string
 	SerialNumber    string

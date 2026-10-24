@@ -74,3 +74,27 @@ func TestAnyHostnameMatch_Empty(t *testing.T) {
 		t.Fatal("no SANs should never match")
 	}
 }
+
+// Regression: hosts addressed by IP were always flagged san-mismatch,
+// because only DNS SANs were consulted.
+func TestMatchesTargetUsesIPSANsForIPTargets(t *testing.T) {
+	info := CertInfo{DNSNames: []string{"localhost", "10.0.0.1"}, IPAddresses: []string{"127.0.0.1", "2001:db8::1"}}
+	cases := []struct {
+		target string
+		want   bool
+	}{
+		{"127.0.0.1", true},
+		{"2001:db8::1", true},
+		{"[2001:db8::1]", true},
+		{"2001:0db8:0000::0001", true},
+		{"10.0.0.1", false}, // an IP in a DNS SAN does not count
+		{"127.0.0.2", false},
+		{"localhost", true},
+		{"other", false},
+	}
+	for _, c := range cases {
+		if got := MatchesTarget(info, c.target); got != c.want {
+			t.Errorf("MatchesTarget(%q) = %v, want %v", c.target, got, c.want)
+		}
+	}
+}

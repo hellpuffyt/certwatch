@@ -1,6 +1,24 @@
 package certcheck
 
-import "strings"
+import (
+	"net"
+	"strings"
+)
+
+// MatchesTarget reports whether the certificate covers target: an IP
+// address target is matched against the IP SANs (DNS SANs never match an
+// IP, as in crypto/x509), anything else against the DNS SANs.
+func MatchesTarget(info CertInfo, target string) bool {
+	if ip := net.ParseIP(strings.Trim(target, "[]")); ip != nil {
+		for _, s := range info.IPAddresses {
+			if san := net.ParseIP(s); san != nil && san.Equal(ip) {
+				return true
+			}
+		}
+		return false
+	}
+	return AnyHostnameMatch(info.DNSNames, target)
+}
 
 // MatchHostname reports whether host matches the SAN entry, supporting a
 // single leftmost wildcard label ("*.example.com") per RFC 6125 as commonly

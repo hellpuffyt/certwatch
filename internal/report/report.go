@@ -10,7 +10,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"certwatch/internal/certcheck"
+	"github.com/hellpuffyt/certwatch/internal/certcheck"
 )
 
 // WriteTable renders results as an aligned, human-readable table sorted by

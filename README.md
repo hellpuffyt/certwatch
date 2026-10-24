@@ -54,7 +54,8 @@ does not attempt to grade your TLS configuration.
   60 days — plus dedicated `expired` and `not-yet-valid` states (a real and
   confusing failure mode when a certificate is issued with a future
   `notBefore`).
-- **Hostname/SAN mismatch detection**, including wildcard SAN matching.
+- **Hostname/SAN mismatch detection**, including wildcard SAN matching;
+  hosts addressed by IP are matched against IP SANs.
 - **Self-signed certificate detection.**
 - **Incomplete chain detection** (server presents only the leaf, no
   intermediates, despite being CA-issued).
@@ -93,7 +94,7 @@ and hands the parsed leaf to the same evaluation code.
 Requires Go 1.22+.
 
 ```sh
-go install certwatch/cmd/certwatch@latest
+go install github.com/hellpuffyt/certwatch/cmd/certwatch@latest
 ```
 
 Or build from source:
@@ -239,9 +240,12 @@ gofmt -l .   # must print nothing
 All severity, tiering, hostname-matching, state-diffing, and reporting
 logic is tested offline using certificates generated at test time with
 `crypto/x509` and `crypto/ecdsa` — no network access or committed key
-material is required. A handful of `cmd/certwatch` tests spin up a local
-loopback TLS listener to exercise the CLI end to end; CI additionally runs
-a smoke job against real public hosts to confirm the network path works.
+material is required. The real TLS fetcher and the CLI are exercised
+against TLS listeners on the loopback interface (full chain, leaf-only,
+expired, not-yet-valid, wrong name, IP SAN, a server that never answers).
+`go test ./...` never contacts the public internet; CI runs a separate,
+clearly labelled smoke job against real public hosts to confirm the network
+path works.
 
 ## Security
 
@@ -253,9 +257,31 @@ a smoke job against real public hosts to confirm the network path works.
 - No private key material is ever generated for or required by production
   use; test certificates are generated in-memory per test run and never
   written to disk.
-- State and metrics files are written with `0600` permissions.
+- The state file is written with `0600` permissions. The
+  `-prometheus-out` file is written `0644` so a node_exporter running as
+  another user can read it. Both are written to a temporary file and
+  renamed into place, so a crash never leaves a truncated file. `-output`
+  is created with default permissions (subject to your umask).
+- State is saved only after all requested output was written; if output
+  fails (exit 2) the next run reports the same changes again.
 - certwatch makes outbound network connections only to the hosts you list
   in your inventory.
+
+## Limitations
+
+- Only the leaf certificate is evaluated for expiry; an expiring
+  intermediate is not reported.
+- `chain-incomplete` is a heuristic: a CA-issued leaf served without any
+  other certificate. It does not build or verify a chain.
+- No Common Name fallback for hostname matching (like modern browsers and
+  Go's `crypto/x509`, only SANs count).
+- YAML inventories ignore unknown keys (a misspelled `lead_times` key is
+  silently ignored); JSON inventories reject them.
+- certwatch does not send alerts itself (see "Alerting").
+- Verified on macOS locally; Linux and Windows rely on CI.
+
+See [`docs/PRODUCTION_READINESS.md`](docs/PRODUCTION_READINESS.md) for the
+audit evidence behind these statements.
 
 ## License
 

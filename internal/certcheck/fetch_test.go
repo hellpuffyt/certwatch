@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"certwatch/internal/inventory"
+	"github.com/hellpuffyt/certwatch/internal/inventory"
 )
 
 func TestCertInfoFromCertificate_Basic(t *testing.T) {
