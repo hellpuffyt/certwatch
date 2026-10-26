@@ -9,19 +9,51 @@ certwatch checks a whole inventory of hosts concurrently, classifies each
 certificate's remaining validity into a configurable severity tier
 (critical / warning / notice / ok, plus dedicated expired and
 not-yet-valid states), flags hostname mismatches, self-signed leafs, and
-incomplete certificate chains, and tracks state between runs so it can
-report what's newly broken, what got fixed, and whether a certificate was
-unexpectedly re-issued by a different CA.
+incomplete certificate chains, and keeps a state file between runs so it
+can tell whether anything is newly broken, fixed, or re-issued (a new
+serial or a different CA). That comparison drives `-only-changed`: a
+scheduled run prints nothing until something changes, then prints the full
+current result.
 
 It outputs a human-readable table, JSON for other tooling, and Prometheus
 textfile-collector metrics for node_exporter, and exits non-zero when
-anything is at or above a configurable severity threshold — so it drops
+anything is at or above a configurable severity threshold, so it drops
 straight into cron or a CI pipeline.
+
+## Demo
+
+<img src="docs/screenshots/fleet-check-and-only-changed.png" width="100%" alt="Terminal: certwatch checks eight loopback TLS servers and reports expired, not-yet-valid, critical, warning, notice and ok tiers plus san-mismatch and self-signed flags; a second run with -only-changed prints nothing; after one certificate is re-issued by another CA the next -only-changed run prints the table again">
+
+Real terminal capture. Eight `openssl s_server` instances on 127.0.0.1 serve
+certificates from a throwaway test CA (one per severity tier, one with the
+wrong name, one self-signed). The first run shows every tier; the
+`-only-changed` run right after it is silent because nothing changed; after
+port 9444 switches to a renewed certificate from a different CA, the next
+`-only-changed` run prints the table again. The exit code stays 1 because
+expired and not-yet-valid certificates rank above the default `-fail-on
+critical`. The first run as text:
+
+```console
+$ certwatch -inventory inventory.yaml -state state.json; echo "exit $?"
+HOST       PORT  SEVERITY       DAYS  ISSUER           FLAGS
+127.0.0.1  9445  EXPIRED        -239  CN=Demo Test CA  -
+127.0.0.1  9446  NOT-YET-VALID  431   CN=Demo Test CA  -
+127.0.0.1  9444  CRITICAL       4     CN=Demo Test CA  -
+127.0.0.1  9443  WARNING        19    CN=Demo Test CA  -
+127.0.0.1  9442  NOTICE         44    CN=Demo Test CA  -
+127.0.0.1  9441  OK             199   CN=Demo Test CA  -
+127.0.0.1  9447  OK             199   CN=Demo Test CA  san-mismatch
+127.0.0.1  9448  OK             199   CN=dev.test      self-signed
+exit 1
+```
+
+The table shows the dial target (`name`), not the SNI; use `-format json`
+to see `sni`, subject, serial and validity dates per host.
 
 ## Why
 
 Certificate expiry still takes down production regularly. The failure mode
-is almost never "nobody knew certificates expire" — it's that the alert
+is almost never "nobody knew certificates expire". It's that the alert
 arrived on the day it expired, or it went to a mailbox nobody reads, or
 the one-off script that used to check this quietly stopped being run.
 certwatch is built to be the thing that actually runs on a schedule, checks
@@ -33,7 +65,7 @@ is quiet the rest of the time.
 This is deliberately **not** a deep single-endpoint TLS auditor. If you
 want chain validation depth, cipher suite analysis, protocol version
 checks, and weak-algorithm detection for one endpoint at a time, use a tool
-built for that (in this author's other projects, that's `tlsprobe`).
+built for that (I wrote [tlsprobe](https://github.com/hellpuffyt/tlsprobe) for that).
 
 certwatch's job is different: **breadth over depth**. It exists to answer
 "across my whole fleet, on a schedule, what's about to expire, what
@@ -51,7 +83,7 @@ does not attempt to grade your TLS configuration.
   rest of the run.
 - **Tiered severity by days remaining**, configurable per-inventory and
   per-host, defaulting to critical < 7 days, warning < 30 days, notice <
-  60 days — plus dedicated `expired` and `not-yet-valid` states (a real and
+  60 days, plus dedicated `expired` and `not-yet-valid` states (a real and
   confusing failure mode when a certificate is issued with a future
   `notBefore`).
 - **Hostname/SAN mismatch detection**, including wildcard SAN matching;
@@ -61,9 +93,11 @@ does not attempt to grade your TLS configuration.
   intermediates, despite being CA-issued).
 - **CA/serial change detection** between runs, catching an unexpected
   re-issue even when the new certificate is otherwise perfectly healthy.
-- **State file** between runs enabling new-problem / resolved-problem /
-  CA-change reporting — this is what makes it a monitor, not a one-shot
-  script.
+- **State file** between runs: each host's last severity, issuer and
+  serial are compared with the current check to detect new problems,
+  resolved problems and CA or serial changes. This is what lets
+  `-only-changed` stay quiet. The output does not say which hosts changed
+  or why; it is always the full current result.
 - **Table, JSON, and Prometheus textfile output.**
 - **`--only-changed`** so a scheduled run stays quiet when nothing changed.
 - **Configurable `--fail-on` exit code threshold** for cron/CI.
@@ -81,12 +115,12 @@ internal/report      Table, JSON, and Prometheus output rendering
 
 Certificate fetching lives behind a small `Fetcher` interface
 (`Fetch(ctx, Host) (CertInfo, error)`). Everything downstream of that
-boundary — severity tiering, SAN matching, self-signed/chain-incomplete
-classification, state diffing, and reporting — is plain data transformation
+boundary (severity tiering, SAN matching, self-signed/chain-incomplete
+classification, state diffing, and reporting) is plain data transformation
 and is unit-tested without any network access, using certificates generated
 in-memory with `crypto/x509` and `crypto/ecdsa`. The real fetcher
 (`certcheck.TLSFetcher`) dials over TLS with certificate verification
-disabled (on purpose — evaluating a broken certificate is the whole point)
+disabled (on purpose: evaluating a broken certificate is the whole point)
 and hands the parsed leaf to the same evaluation code.
 
 ## Installation
@@ -124,7 +158,8 @@ certwatch -inventory inventory.yaml [flags]
 | `-deadline`       | `60s`                    | Overall deadline for the whole run.                                           |
 | `-fail-on`        | `critical`               | Minimum severity that causes a non-zero exit: `ok`, `notice`, `warning`, `critical`, `not-yet-valid`, `expired`, `error`. |
 | `-only-changed`   | `false`                  | Suppress table/json output when nothing changed since the last run.           |
-| `-version`        | —                        | Print version and exit.                                                       |
+| `-now`            | *(current time)*         | Evaluate against this RFC3339 time instead of now (mainly for testing).       |
+| `-version`        |                          | Print version and exit.                                                       |
 
 Exit codes: `0` nothing at or above the fail-on threshold, `1` something
 is, `2` usage or configuration error (bad flags, unreadable inventory,
@@ -161,17 +196,17 @@ example.
 
 ## Alerting
 
-certwatch doesn't send alerts itself — it's designed to be the check step
+certwatch doesn't send alerts itself. It's designed to be the check step
 in something that does:
 
 - **Cron + exit code**: run on a schedule with `-fail-on critical`; a
   non-zero exit from cron is picked up by whatever your cron wrapper
   already does with failures (mail, a dead-man's-switch ping, etc).
-- **CI pipeline**: same idea — fail the job, let your existing pipeline
+- **CI pipeline**: same idea. Fail the job, let your existing pipeline
   notification path carry it.
 - **`-format json`**: pipe into a small script or webhook call that posts
   to Slack/PagerDuty/etc, keyed on `severity` and `host`.
-- **`-only-changed`**: run frequently without spamming — output (and thus
+- **`-only-changed`**: run frequently without spamming. Output (and thus
   whatever's downstream of it) is only produced when something is newly
   broken, newly resolved, or the CA/serial changed.
 
@@ -239,7 +274,7 @@ gofmt -l .   # must print nothing
 
 All severity, tiering, hostname-matching, state-diffing, and reporting
 logic is tested offline using certificates generated at test time with
-`crypto/x509` and `crypto/ecdsa` — no network access or committed key
+`crypto/x509` and `crypto/ecdsa`; no network access or committed key
 material is required. The real TLS fetcher and the CLI are exercised
 against TLS listeners on the loopback interface (full chain, leaf-only,
 expired, not-yet-valid, wrong name, IP SAN, a server that never answers).
@@ -250,7 +285,7 @@ path works.
 ## Security
 
 - certwatch's real fetcher connects with certificate verification disabled
-  on purpose (`InsecureSkipVerify`) — its entire job is to evaluate
+  on purpose (`InsecureSkipVerify`): its entire job is to evaluate
   certificates that may be invalid, expired, or otherwise broken. It does
   no other TLS configuration analysis and should not be used as a
   substitute for a properly verifying HTTP client elsewhere in your stack.
@@ -278,10 +313,18 @@ path works.
 - YAML inventories ignore unknown keys (a misspelled `lead_times` key is
   silently ignored); JSON inventories reject them.
 - certwatch does not send alerts itself (see "Alerting").
+- Changes between runs are detected but not itemised: the output does not
+  mark which host is new, resolved or re-issued. Compare with the previous
+  JSON output if you need that.
 - Verified on macOS locally; Linux and Windows rely on CI.
 
 See [`docs/PRODUCTION_READINESS.md`](docs/PRODUCTION_READINESS.md) for the
 audit evidence behind these statements.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md) for
+reporting vulnerabilities. Changes are listed in [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 
